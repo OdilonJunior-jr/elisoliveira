@@ -215,7 +215,7 @@ a { color: inherit; text-decoration: none; }
 .social-link img { width: 17px; height: 17px; filter: brightness(0) invert(1); opacity: .92; }
 .social-link:hover { transform: translateY(-2px); border-color: var(--line-hover); background: rgba(201, 166, 107, .10); }
 
-/* VÍDEO DA ÁRVORE CONTROLADO PELA ROLAGEM */
+/* VÍDEO DA ÁRVORE — LOOP NO DESKTOP E SCRUB NO MOBILE */
 .tree-story {
   position: relative;
   width: 100vw;
@@ -530,5 +530,457 @@ a { color: inherit; text-decoration: none; }
         transparent 48%,
         rgba(26,18,15,.02) 78%,
         rgba(26,18,15,.14) 100%);
+  }
+}
+
+/* OTIMIZAÇÃO FINAL — cards estáticos e rolagem mobile mais curta */
+@media (min-width: 901px) {
+  .reveal,
+  .reveal.is-visible {
+    opacity: 1;
+    transform: none;
+    transition: none;
+  }
+}
+
+.service-card,
+.service-card__media img,
+.service-card__cta,
+.service-card__cta svg {
+  transition: none;
+}
+
+.service-card:hover {
+  transform: none;
+  border-color: rgba(243, 233, 221, .24);
+  box-shadow: 0 18px 40px -30px rgba(10, 7, 5, .55);
+}
+
+.service-card:hover .service-card__media img {
+  transform: none;
+  filter: saturate(.94) contrast(1.02) brightness(.94);
+}
+
+.service-card__cta:hover {
+  gap: 6px;
+}
+
+.service-card__cta:hover svg {
+  transform: none;
+}
+
+/* Animação original restaurada somente no mobile/tablet. */
+@media (max-width: 900px) {
+  .reveal {
+    opacity: 0;
+    transform: translateY(15px);
+  }
+
+  .reveal.is-visible {
+    opacity: 1;
+    transform: none;
+  }
+
+  .hero.reveal,
+  .service-card.reveal {
+    transition: opacity .68s var(--ease), transform .68s var(--ease);
+  }
+}
+
+@media (max-width: 700px) {
+  .tree-story {
+    margin-top: 8px;
+  }
+
+  .tree-story__content {
+    padding: 4dvh 6px 6dvh;
+  }
+
+  .services-grid {
+    gap: 12px;
+  }
+
+  .service-card {
+    width: min(540px, calc(100vw - 18px));
+    border-radius: 15px;
+    box-shadow: 0 12px 28px -24px rgba(10, 7, 5, .48);
+  }
+
+  .service-card__content,
+  .service-card--reverse .service-card__content {
+    padding: 12px 11px 12px 13px;
+  }
+
+  .service-card--reverse .service-card__content {
+    padding-left: 11px;
+    padding-right: 13px;
+  }
+
+  .service-card h3 {
+    font-size: clamp(17px, 4.9vw, 21px);
+    line-height: 1;
+  }
+
+  .service-card p {
+    margin-top: 6px;
+    font-size: clamp(10.5px, 2.75vw, 12.5px);
+    line-height: 1.28;
+  }
+
+  .service-card__cta {
+    margin-top: 8px;
+    font-size: clamp(10px, 2.5vw, 12px);
+  }
+}
+
+/* DESKTOP 50/50 — vídeo em uma metade e projeto na outra */
+@media (min-width: 901px) {
+  .tree-story {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    align-items: start;
+    min-height: 100dvh;
+    margin-top: 0;
+    background: #1b120f;
+  }
+
+  .tree-story__sticky {
+    grid-column: 1;
+    position: sticky;
+    top: 0;
+    width: 100%;
+    height: 100dvh;
+    margin: 0;
+    z-index: 1;
+    border-right: 1px solid rgba(243, 233, 221, .12);
+  }
+
+  .tree-story__video {
+    object-position: center center;
+  }
+
+  .tree-story__veil {
+    background:
+      linear-gradient(90deg, rgba(26,18,15,.06) 0%, rgba(26,18,15,.02) 68%, rgba(26,18,15,.28) 100%),
+      linear-gradient(180deg, rgba(26,18,15,.16) 0%, transparent 22%, transparent 74%, rgba(26,18,15,.34) 100%);
+  }
+
+  .tree-story__content {
+    grid-column: 2;
+    width: 100%;
+    max-width: none;
+    min-height: 100dvh;
+    margin: 0;
+    padding: clamp(24px, 3vw, 48px);
+    background:
+      radial-gradient(circle at 100% 0%, rgba(168,95,73,.10), transparent 32%),
+      linear-gradient(180deg, #241813 0%, #1a120f 100%);
+  }
+
+  .services-grid {
+    width: 100%;
+    max-width: 700px;
+    gap: 18px;
+  }
+
+  .service-card,
+  .service-card--reverse {
+    width: 100%;
+    min-height: 220px;
+    grid-template-columns: 54% 46%;
+    border-radius: 20px;
+  }
+
+  .service-card--reverse {
+    grid-template-columns: 46% 54%;
+  }
+
+  .service-card__content,
+  .service-card--reverse .service-card__content {
+    padding: clamp(20px, 2vw, 30px);
+  }
+
+  .service-card h3 {
+    font-size: clamp(24px, 2vw, 32px);
+  }
+
+  .service-card p {
+    margin-top: 9px;
+    font-size: clamp(13px, .95vw, 15px);
+    line-height: 1.35;
+  }
+
+  .service-card__cta {
+    margin-top: 14px;
+    font-size: 13px;
+  }
+}
+
+@media (min-width: 901px) and (max-width: 1120px) {
+  .tree-story__content {
+    padding: 22px;
+  }
+
+  .services-grid {
+    gap: 14px;
+  }
+
+  .service-card,
+  .service-card--reverse {
+    min-height: 198px;
+  }
+
+  .service-card__content,
+  .service-card--reverse .service-card__content {
+    padding: 18px;
+  }
+
+  .service-card h3 {
+    font-size: 23px;
+  }
+
+  .service-card p {
+    font-size: 12.5px;
+  }
+}
+
+
+/* DESKTOP FINAL — imagem fixa ao fundo e cards sobrepostos.
+   O mobile/tablet permanece com o comportamento anterior do vídeo. */
+.tree-story__desktop-image {
+  display: none;
+}
+
+@media (min-width: 901px) {
+  .tree-story {
+    display: block;
+    min-height: 100dvh;
+    margin-top: 0;
+    background: #17110e;
+  }
+
+  .tree-story__sticky {
+    grid-column: auto;
+    position: sticky;
+    top: 0;
+    z-index: 0;
+    width: 100%;
+    height: 100dvh;
+    margin: 0;
+    overflow: hidden;
+    border: 0;
+    opacity: 1;
+    background: #17110e;
+    contain: layout paint;
+  }
+
+  .tree-story__desktop-image {
+    position: absolute;
+    inset: 0;
+    display: block;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    object-position: center center;
+    filter: saturate(1.03) contrast(1.02) brightness(.94);
+  }
+
+  .tree-story__video {
+    display: none !important;
+  }
+
+  .tree-story__veil {
+    background:
+      linear-gradient(180deg,
+        rgba(16, 13, 8, .30) 0%,
+        rgba(16, 13, 8, .10) 22%,
+        rgba(16, 13, 8, .08) 66%,
+        rgba(16, 13, 8, .38) 100%),
+      radial-gradient(ellipse at center,
+        rgba(17, 13, 8, .02) 24%,
+        rgba(17, 13, 8, .16) 72%,
+        rgba(17, 13, 8, .42) 100%);
+  }
+
+  .tree-story__content {
+    grid-column: auto;
+    position: relative;
+    z-index: 1;
+    width: 100%;
+    max-width: 1280px;
+    min-height: 100dvh;
+    margin: -100dvh auto 0;
+    padding: clamp(52px, 7vh, 82px) clamp(28px, 4vw, 64px);
+    background: transparent;
+  }
+
+  .services-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    align-items: stretch;
+    width: 100%;
+    max-width: 1160px;
+    margin: 0 auto;
+    gap: 16px 18px;
+  }
+
+  .service-card,
+  .service-card--reverse {
+    width: 100%;
+    min-height: 198px;
+    grid-template-columns: 53% 47%;
+    border-radius: 20px;
+    border-color: rgba(255, 255, 255, .34);
+    background: rgba(238, 225, 208, .965);
+    box-shadow: 0 18px 42px -25px rgba(7, 5, 3, .72);
+  }
+
+  .service-card--reverse {
+    grid-template-columns: 47% 53%;
+  }
+
+  .service-card__content,
+  .service-card--reverse .service-card__content {
+    padding: clamp(17px, 1.7vw, 24px);
+  }
+
+  .service-card h3 {
+    font-size: clamp(21px, 1.8vw, 29px);
+    line-height: 1;
+  }
+
+  .service-card p {
+    margin-top: 8px;
+    max-width: 330px;
+    font-size: clamp(12px, .9vw, 14px);
+    line-height: 1.32;
+  }
+
+  .service-card__cta {
+    margin-top: 12px;
+    font-size: clamp(11.5px, .85vw, 13px);
+  }
+}
+
+@media (min-width: 901px) and (max-height: 760px) {
+  .tree-story__content {
+    padding-top: 34px;
+    padding-bottom: 34px;
+  }
+
+  .services-grid {
+    gap: 12px 16px;
+  }
+
+  .service-card,
+  .service-card--reverse {
+    min-height: 184px;
+  }
+
+  .service-card__content,
+  .service-card--reverse .service-card__content {
+    padding: 16px 18px;
+  }
+
+  .service-card h3 {
+    font-size: clamp(20px, 1.65vw, 26px);
+  }
+
+  .service-card p {
+    margin-top: 6px;
+    font-size: clamp(11.5px, .82vw, 13px);
+  }
+
+  .service-card__cta {
+    margin-top: 9px;
+    font-size: 11.5px;
+  }
+}
+
+/* CORREÇÃO DESKTOP — remove a faixa vazia abaixo da imagem fixa. */
+@media (min-width: 901px) {
+  .page-shell {
+    padding-bottom: 0;
+  }
+
+  .tree-story {
+    margin-bottom: 0;
+  }
+}
+
+
+/* AJUSTE FINAL — cards mais curtos no mobile para mostrar mais da árvore durante o scroll */
+@media (max-width: 700px) {
+  .tree-story__content {
+    padding: 8dvh 8px 10dvh;
+  }
+
+  .services-grid {
+    gap: 16px;
+  }
+
+  .service-card {
+    width: min(560px, calc(100vw - 18px));
+    grid-template-columns: 56% 44%;
+    border-radius: 18px;
+  }
+
+  .service-card--reverse {
+    grid-template-columns: 44% 56%;
+  }
+
+  .service-card__content {
+    padding: 14px 12px 14px 14px;
+  }
+
+  .service-card--reverse .service-card__content {
+    padding: 14px 14px 14px 12px;
+  }
+
+  .service-card h3 {
+    font-size: clamp(17px, 4.6vw, 21px);
+    line-height: 1.01;
+  }
+
+  .service-card p {
+    margin-top: 6px;
+    font-size: clamp(10.4px, 2.6vw, 12.2px);
+    line-height: 1.24;
+  }
+
+  .service-card__cta {
+    margin-top: 8px;
+    font-size: clamp(9.8px, 2.35vw, 11.8px);
+  }
+}
+
+@media (max-width: 420px) {
+  .service-card {
+    grid-template-columns: 57% 43%;
+  }
+
+  .service-card--reverse {
+    grid-template-columns: 43% 57%;
+  }
+
+  .service-card__content {
+    padding: 12px 10px 12px 12px;
+  }
+
+  .service-card--reverse .service-card__content {
+    padding: 12px 12px 12px 10px;
+  }
+
+  .service-card h3 {
+    font-size: clamp(16px, 4.9vw, 19px);
+  }
+
+  .service-card p {
+    font-size: clamp(9.8px, 2.9vw, 11.6px);
+    line-height: 1.2;
+  }
+
+  .service-card__cta {
+    font-size: clamp(9.4px, 2.6vw, 11px);
   }
 }

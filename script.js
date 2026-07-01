@@ -159,24 +159,32 @@ function initScrollScrubVideo() {
   const video = document.querySelector("#tree-scroll-video");
   if (!section || !video) return;
 
-  const clamp = (value, min, max) => Math.min(Math.max(value, min), max);
   const mobileQuery = window.matchMedia("(max-width: 700px)");
+  const desktopImageQuery = window.matchMedia("(min-width: 901px)");
   const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-  const SOURCE_FPS = 24;
-  const FRAME_STEP = 1 / SOURCE_FPS;
+  const clamp = (value, min, max) => Math.min(Math.max(value, min), max);
+
+  // Mantém o scrub já existente no celular. No desktop, o vídeo nem é
+  // carregado: a seção usa exclusivamente a imagem fixa enviada.
+  const FRAME_STEP = 1 / 12;
 
   let duration = 0;
   let latestProgress = 0;
-  let targetTime = 0;
-  let seekFrame = 0;
-  let sourceIsMobile = mobileQuery.matches;
-  let scrollTriggerInstance = null;
-  let fallbackFrame = 0;
+  let animationFrame = 0;
+  let lastAppliedTime = -1;
+  let mobileListenersActive = false;
+  let activeMode = "";
 
   video.muted = true;
   video.playsInline = true;
   video.disablePictureInPicture = true;
   video.preload = "auto";
+
+  const viewportMode = () => {
+    if (desktopImageQuery.matches) return "desktop-image";
+    if (mobileQuery.matches) return "mobile-scrub";
+    return "tablet-video";
+  };
 
   const sourceForViewport = () => (
     mobileQuery.matches ? CONFIG.media.treeVideoMobile : CONFIG.media.treeVideoDesktop
@@ -188,101 +196,137 @@ function initScrollScrubVideo() {
       : CONFIG.media.treePoster
   );
 
-  const quantizeTime = progress => {
-    const safeEnd = Math.max(duration - FRAME_STEP, 0.01);
-    const rawTime = clamp(progress, 0, 1) * safeEnd;
-    return clamp(Math.round(rawTime / FRAME_STEP) * FRAME_STEP, 0.01, safeEnd);
-  };
-
-  const applyLatestFrame = () => {
-    seekFrame = 0;
-    if (!duration || video.readyState < HTMLMediaElement.HAVE_METADATA) return;
-
-    const nextTime = quantizeTime(latestProgress);
-    targetTime = nextTime;
-
-    // Nunca cria uma fila de seeks. Enquanto um quadro está sendo entregue,
-    // apenas guardamos o destino mais recente do scroll.
-    if (video.seeking) return;
-    if (Math.abs(video.currentTime - nextTime) < FRAME_STEP * 0.45) return;
-
-    try {
-      video.currentTime = nextTime;
-    } catch (_) {
-      // Alguns navegadores ignoram seeks antes de liberar o primeiro quadro.
-    }
-  };
-
-  const requestFrame = progress => {
-    latestProgress = clamp(progress, 0, 1);
-    if (!seekFrame) seekFrame = window.requestAnimationFrame(applyLatestFrame);
-  };
-
-  const currentNativeProgress = () => {
+  const currentProgress = () => {
     const rect = section.getBoundingClientRect();
     const range = Math.max(section.offsetHeight - window.innerHeight, 1);
     return clamp(-rect.top / range, 0, 1);
   };
 
-  const createNativeFallback = () => {
-    const update = () => {
-      fallbackFrame = 0;
-      requestFrame(currentNativeProgress());
-    };
-    const requestUpdate = () => {
-      if (!fallbackFrame) fallbackFrame = window.requestAnimationFrame(update);
-    };
-
-    window.addEventListener("scroll", requestUpdate, { passive: true });
-    window.addEventListener("resize", requestUpdate, { passive: true });
-    update();
+  const quantizedTime = progress => {
+    const safeEnd = Math.max(duration - FRAME_STEP, 0.01);
+    const rawTime = clamp(progress, 0, 1) * safeEnd;
+    return clamp(Math.round(rawTime / FRAME_STEP) * FRAME_STEP, 0.01, safeEnd);
   };
 
-  const createScrollTrigger = () => {
-    if (!window.gsap || !window.ScrollTrigger) {
-      createNativeFallback();
-      return;
+  const applyMobileFrame = () => {
+    animationFrame = 0;
+    if (!mobileQuery.matches || desktopImageQuery.matches || !duration || video.readyState < HTMLMediaElement.HAVE_METADATA) return;
+
+    const nextTime = quantizedTime(latestProgress);
+    if (Math.abs(nextTime - lastAppliedTime) < FRAME_STEP * 0.9) return;
+    if (video.seeking) return;
+
+    lastAppliedTime = nextTime;
+    try {
+      video.currentTime = nextTime;
+    } catch (_) {
+      // O navegador pode ignorar o primeiro seek enquanto o vídeo inicializa.
     }
+  };
 
-    window.gsap.registerPlugin(window.ScrollTrigger);
-    window.ScrollTrigger.config({
-      limitCallbacks: true,
-      ignoreMobileResize: true
-    });
+  const requestMobileFrame = () => {
+    if (!mobileQuery.matches || desktopImageQuery.matches) return;
+    latestProgress = currentProgress();
+    if (!animationFrame) {
+      animationFrame = window.requestAnimationFrame(applyMobileFrame);
+    }
+  };
 
-    scrollTriggerInstance?.kill();
-    scrollTriggerInstance = window.ScrollTrigger.create({
-      trigger: section,
-      start: "top top",
-      end: "bottom bottom",
-      scrub: true,
-      invalidateOnRefresh: true,
-      fastScrollEnd: false,
-      onUpdate: self => requestFrame(self.progress),
-      onRefresh: self => requestFrame(self.progress)
-    });
+  const addMobileListeners = () => {
+    if (mobileListenersActive) return;
+    mobileListenersActive = true;
+    window.addEventListener("scroll", requestMobileFrame, { passive: true });
+    window.addEventListener("resize", requestMobileFrame, { passive: true });
+    window.addEventListener("orientationchange", requestMobileFrame, { passive: true });
+  };
+
+  const removeMobileListeners = () => {
+    if (!mobileListenersActive) return;
+    mobileListenersActive = false;
+    window.removeEventListener("scroll", requestMobileFrame);
+    window.removeEventListener("resize", requestMobileFrame);
+    window.removeEventListener("orientationchange", requestMobileFrame);
+    if (animationFrame) window.cancelAnimationFrame(animationFrame);
+    animationFrame = 0;
   };
 
   const unlockMobileDecoder = () => {
-    if (!mobileQuery.matches || reduceMotion) return;
+    if (!mobileQuery.matches || desktopImageQuery.matches || reduceMotion) return;
     const attempt = video.play();
     if (attempt && typeof attempt.then === "function") {
       attempt.then(() => {
         video.pause();
-        requestFrame(latestProgress);
+        requestMobileFrame();
       }).catch(() => {});
     }
   };
 
-  const loadResponsiveSource = (preserveProgress = false) => {
-    const retainedProgress = preserveProgress
-      ? latestProgress
-      : currentNativeProgress();
+  const startTabletPlayback = () => {
+    removeMobileListeners();
+    video.loop = true;
+    video.autoplay = true;
+    video.setAttribute("loop", "");
+    video.setAttribute("autoplay", "");
 
-    latestProgress = retainedProgress;
-    targetTime = 0;
+    if (reduceMotion) {
+      video.pause();
+      if (duration) video.currentTime = Math.min(duration * 0.42, Math.max(duration - 0.05, 0));
+      return;
+    }
+
+    video.play().catch(() => {
+      const resume = () => video.play().catch(() => {});
+      window.addEventListener("pointerdown", resume, { once: true });
+      window.addEventListener("keydown", resume, { once: true });
+    });
+  };
+
+  const startMobileScrub = () => {
+    video.loop = false;
+    video.autoplay = false;
+    video.removeAttribute("loop");
+    video.removeAttribute("autoplay");
+    video.pause();
+    lastAppliedTime = -1;
+
+    if (reduceMotion) {
+      latestProgress = 0.42;
+      applyMobileFrame();
+      return;
+    }
+
+    addMobileListeners();
+    requestMobileFrame();
+    unlockMobileDecoder();
+  };
+
+  const startDesktopImage = () => {
+    removeMobileListeners();
     duration = 0;
+    lastAppliedTime = -1;
+    video.pause();
+    video.removeAttribute("src");
+    video.removeAttribute("loop");
+    video.removeAttribute("autoplay");
+    video.load();
     section.classList.remove("is-video-ready");
+    section.classList.add("is-desktop-image");
+  };
+
+  const loadResponsiveSource = () => {
+    const nextMode = viewportMode();
+    if (nextMode === activeMode) return;
+    activeMode = nextMode;
+
+    if (nextMode === "desktop-image") {
+      startDesktopImage();
+      return;
+    }
+
+    removeMobileListeners();
+    duration = 0;
+    lastAppliedTime = -1;
+    section.classList.remove("is-desktop-image", "is-video-ready");
 
     video.pause();
     video.poster = posterForViewport();
@@ -291,54 +335,55 @@ function initScrollScrubVideo() {
   };
 
   video.addEventListener("loadedmetadata", () => {
+    if (desktopImageQuery.matches) return;
     duration = Number.isFinite(video.duration) ? video.duration : 0;
     if (!duration) return;
 
     section.classList.add("is-video-ready");
-
-    if (reduceMotion) {
-      latestProgress = 0.42;
-      requestFrame(latestProgress);
-      return;
-    }
-
-    requestFrame(latestProgress || currentNativeProgress());
-    unlockMobileDecoder();
-    createScrollTrigger();
-    window.ScrollTrigger?.refresh();
+    if (mobileQuery.matches) startMobileScrub();
+    else startTabletPlayback();
   });
 
   video.addEventListener("loadeddata", () => {
+    if (desktopImageQuery.matches) return;
     section.classList.add("is-video-ready");
-  });
-
-  video.addEventListener("seeked", () => {
-    // Se o usuário continuou rolando durante o seek, salta diretamente
-    // para o quadro mais recente, sem processar os intermediários antigos.
-    const newestTime = quantizeTime(latestProgress);
-    if (Math.abs(newestTime - video.currentTime) >= FRAME_STEP * 0.5) {
-      requestFrame(latestProgress);
+    if (!mobileQuery.matches && !reduceMotion && video.paused) {
+      video.play().catch(() => {});
     }
   });
 
-  mobileQuery.addEventListener?.("change", () => {
-    if (sourceIsMobile === mobileQuery.matches) return;
-    sourceIsMobile = mobileQuery.matches;
-    loadResponsiveSource(true);
+  video.addEventListener("seeked", () => {
+    if (!mobileQuery.matches || desktopImageQuery.matches || !duration) return;
+    const newestTime = quantizedTime(currentProgress());
+    if (Math.abs(newestTime - video.currentTime) >= FRAME_STEP) {
+      requestMobileFrame();
+    }
   });
 
-  window.addEventListener("orientationchange", () => {
-    window.setTimeout(() => window.ScrollTrigger?.refresh(), 160);
-  }, { passive: true });
+  const handleBreakpointChange = () => {
+    loadResponsiveSource();
+  };
 
-  loadResponsiveSource(false);
+  mobileQuery.addEventListener?.("change", handleBreakpointChange);
+  desktopImageQuery.addEventListener?.("change", handleBreakpointChange);
+
+  document.addEventListener("visibilitychange", () => {
+    if (!desktopImageQuery.matches && !mobileQuery.matches && !reduceMotion && !document.hidden) {
+      video.play().catch(() => {});
+    }
+  });
+
+  loadResponsiveSource();
 }
 
-function initRevealAnimation() {
+function initMobileRevealAnimation() {
   const items = document.querySelectorAll(".reveal");
+  const mobileLayout = window.matchMedia("(max-width: 900px)").matches;
   const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
-  if (reduceMotion || !("IntersectionObserver" in window)) {
+  // No desktop 50/50 os cards ficam estáticos. No mobile, volta a
+  // animação original de entrada conforme cada card aparece na tela.
+  if (!mobileLayout || reduceMotion || !("IntersectionObserver" in window)) {
     items.forEach(item => item.classList.add("is-visible"));
     return;
   }
@@ -362,6 +407,6 @@ function initRevealAnimation() {
 
 document.addEventListener("DOMContentLoaded", () => {
   applyConfig();
-  initRevealAnimation();
+  initMobileRevealAnimation();
   initScrollScrubVideo();
 });
