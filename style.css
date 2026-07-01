@@ -532,3 +532,11 @@ a { color: inherit; text-decoration: none; }
         rgba(26,18,15,.22) 100%);
   }
 }
+
+
+/* PERFORMANCE DO VÍDEO — sem alterar o visual dos cards ou da página */
+.tree-story__video {
+  transform: translate3d(0, 0, 0) scale(1.003);
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+}

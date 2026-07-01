@@ -161,31 +161,41 @@ function initScrollScrubVideo() {
   const clamp = (value, min, max) => Math.min(Math.max(value, min), max);
   const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
   const mobileQuery = window.matchMedia("(max-width: 700px)");
+  const VIDEO_FPS = 24;
+  const FRAME_STEP = 1 / VIDEO_FPS;
 
-  let activeTween = null;
   let activeTrigger = null;
+  let fallbackCleanup = null;
   let metadataHandler = null;
   let seekedHandler = null;
-  let frameRequest = 0;
-  let requestedTime = 0;
+  let animationFrame = 0;
+  let duration = 0;
+  let targetTime = 0;
+  let displayedTime = 0;
+  let lastSeekAt = 0;
   let sourceIsMobile = mobileQuery.matches;
+
+  video.preload = "auto";
+  video.muted = true;
+  video.playsInline = true;
+  video.disablePictureInPicture = true;
 
   const sourceForViewport = () => (
     mobileQuery.matches ? CONFIG.media.treeVideoMobile : CONFIG.media.treeVideoDesktop
   );
 
-  const cancelFrame = () => {
-    if (!frameRequest) return;
-    window.cancelAnimationFrame(frameRequest);
-    frameRequest = 0;
+  const stopAnimationLoop = () => {
+    if (!animationFrame) return;
+    window.cancelAnimationFrame(animationFrame);
+    animationFrame = 0;
   };
 
   const destroyScrollControl = () => {
-    cancelFrame();
-    activeTween?.kill();
+    stopAnimationLoop();
     activeTrigger?.kill();
-    activeTween = null;
     activeTrigger = null;
+    fallbackCleanup?.();
+    fallbackCleanup = null;
 
     if (metadataHandler) video.removeEventListener("loadedmetadata", metadataHandler);
     if (seekedHandler) video.removeEventListener("seeked", seekedHandler);
@@ -193,35 +203,54 @@ function initScrollScrubVideo() {
     seekedHandler = null;
   };
 
-  const commitRequestedFrame = () => {
-    frameRequest = 0;
-    if (video.readyState < HTMLMediaElement.HAVE_METADATA || !Number.isFinite(video.duration)) return;
-    if (video.seeking) return;
+  const commitFrame = now => {
+    animationFrame = 0;
+    if (!duration || video.readyState < HTMLMediaElement.HAVE_METADATA) return;
 
-    const safeEnd = Math.max(video.duration - 0.04, 0.01);
-    const nextTime = clamp(requestedTime, 0.01, safeEnd);
-    const difference = Math.abs(video.currentTime - nextTime);
-    if (difference < 0.018) return;
+    const safeEnd = Math.max(duration - FRAME_STEP, FRAME_STEP);
+    const smoothing = mobileQuery.matches ? 0.16 : 0.20;
+    const differenceToTarget = targetTime - displayedTime;
 
-    try {
-      // Para deslocamentos grandes, fastSeek reduz o custo de decodificação.
-      // O vídeo foi exportado com keyframes a cada 0,25 s para manter precisão.
-      if (typeof video.fastSeek === "function" && difference > 0.55) {
-        video.fastSeek(nextTime);
-      } else {
-        video.currentTime = nextTime;
+    displayedTime += differenceToTarget * smoothing;
+    if (Math.abs(differenceToTarget) < FRAME_STEP * 0.35) {
+      displayedTime = targetTime;
+    }
+
+    // Trabalha em passos reais de quadro. Isso evita dezenas de seeks
+    // praticamente iguais, que eram a principal causa dos engasgos.
+    const quantizedTime = clamp(
+      Math.round(displayedTime / FRAME_STEP) * FRAME_STEP,
+      FRAME_STEP,
+      safeEnd
+    );
+
+    const minimumSeekInterval = mobileQuery.matches ? 52 : 38;
+    const canSeek = !video.seeking && (now - lastSeekAt) >= minimumSeekInterval;
+
+    if (canSeek && Math.abs(video.currentTime - quantizedTime) >= FRAME_STEP * 0.72) {
+      try {
+        lastSeekAt = now;
+        video.currentTime = quantizedTime;
+      } catch (_) {
+        // Alguns navegadores recusam um seek enquanto o decoder inicializa.
       }
-    } catch (_) {
-      // O navegador pode recusar uma busca enquanto prepara o decoder.
+    }
+
+    const stillSmoothing = Math.abs(targetTime - displayedTime) > FRAME_STEP * 0.28;
+    const waitingForFrame = video.seeking || Math.abs(video.currentTime - quantizedTime) > FRAME_STEP;
+
+    if (stillSmoothing || waitingForFrame) {
+      animationFrame = window.requestAnimationFrame(commitFrame);
     }
   };
 
-  const requestFrameCommit = time => {
-    requestedTime = time;
-    if (!frameRequest) frameRequest = window.requestAnimationFrame(commitRequestedFrame);
+  const requestSmoothFrame = time => {
+    if (!duration) return;
+    targetTime = clamp(time, FRAME_STEP, Math.max(duration - FRAME_STEP, FRAME_STEP));
+    if (!animationFrame) animationFrame = window.requestAnimationFrame(commitFrame);
   };
 
-  const nativeFallback = duration => {
+  const nativeFallback = safeDuration => {
     let scrollFrame = 0;
 
     const update = () => {
@@ -229,7 +258,7 @@ function initScrollScrubVideo() {
       const rect = section.getBoundingClientRect();
       const range = Math.max(section.offsetHeight - window.innerHeight, 1);
       const progress = clamp(-rect.top / range, 0, 1);
-      requestFrameCommit(progress * Math.max(duration - 0.04, 0.01));
+      requestSmoothFrame(progress * safeDuration);
     };
 
     const requestUpdate = () => {
@@ -240,43 +269,31 @@ function initScrollScrubVideo() {
     window.addEventListener("resize", requestUpdate, { passive: true });
     update();
 
-    activeTrigger = {
-      kill() {
-        window.removeEventListener("scroll", requestUpdate);
-        window.removeEventListener("resize", requestUpdate);
-        if (scrollFrame) window.cancelAnimationFrame(scrollFrame);
-      }
+    fallbackCleanup = () => {
+      window.removeEventListener("scroll", requestUpdate);
+      window.removeEventListener("resize", requestUpdate);
+      if (scrollFrame) window.cancelAnimationFrame(scrollFrame);
     };
   };
 
-  const createGsapControl = duration => {
-    const safeDuration = Math.max(duration - 0.04, 0.01);
-    const playhead = { time: 0.01 };
-
+  const createGsapControl = safeDuration => {
     window.gsap.registerPlugin(window.ScrollTrigger);
     window.ScrollTrigger.config({
       limitCallbacks: true,
       ignoreMobileResize: true
     });
 
-    activeTween = window.gsap.to(playhead, {
-      time: safeDuration,
-      ease: "none",
-      paused: true,
-      onUpdate: () => requestFrameCommit(playhead.time)
-    });
-
     activeTrigger = window.ScrollTrigger.create({
       trigger: section,
       start: "top top",
       end: "bottom bottom",
-      animation: activeTween,
-      scrub: 0.38,
       invalidateOnRefresh: true,
       anticipatePin: 1,
+      fastScrollEnd: false,
+      onUpdate: self => requestSmoothFrame(self.progress * safeDuration),
       onRefresh: self => {
-        playhead.time = self.progress * safeDuration;
-        requestFrameCommit(playhead.time);
+        displayedTime = self.progress * safeDuration;
+        requestSmoothFrame(displayedTime);
       }
     });
 
@@ -284,37 +301,43 @@ function initScrollScrubVideo() {
   };
 
   const prepareVideo = () => {
-    const duration = Number.isFinite(video.duration) ? video.duration : 0;
+    duration = Number.isFinite(video.duration) ? video.duration : 0;
     if (!duration) return;
 
+    const safeDuration = Math.max(duration - FRAME_STEP, FRAME_STEP);
     video.pause();
     section.classList.add("is-video-ready");
 
+    displayedTime = FRAME_STEP;
+    targetTime = FRAME_STEP;
+    lastSeekAt = 0;
+
     seekedHandler = () => {
-      if (Math.abs(video.currentTime - requestedTime) > 0.025) {
-        requestFrameCommit(requestedTime);
+      if (Math.abs(video.currentTime - targetTime) > FRAME_STEP) {
+        if (!animationFrame) animationFrame = window.requestAnimationFrame(commitFrame);
       }
     };
     video.addEventListener("seeked", seekedHandler);
 
     if (reduceMotion) {
-      requestFrameCommit(duration * 0.42);
+      displayedTime = safeDuration * 0.42;
+      requestSmoothFrame(displayedTime);
       return;
     }
 
     if (window.gsap && window.ScrollTrigger) {
-      createGsapControl(duration);
+      createGsapControl(safeDuration);
     } else {
-      nativeFallback(duration);
+      nativeFallback(safeDuration);
     }
 
-    // Inicializa o decoder móvel sem deixar o vídeo tocar sozinho.
+    // Inicializa o decoder em celulares sem iniciar reprodução visível.
     if (mobileQuery.matches) {
       const unlock = video.play();
       if (unlock && typeof unlock.then === "function") {
         unlock.then(() => {
           video.pause();
-          requestFrameCommit(requestedTime);
+          requestSmoothFrame(targetTime);
         }).catch(() => {});
       }
     }
@@ -323,7 +346,10 @@ function initScrollScrubVideo() {
   const loadResponsiveSource = () => {
     destroyScrollControl();
     section.classList.remove("is-video-ready");
-    requestedTime = 0;
+    duration = 0;
+    targetTime = 0;
+    displayedTime = 0;
+    lastSeekAt = 0;
 
     video.pause();
     video.removeAttribute("src");
