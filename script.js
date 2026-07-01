@@ -76,6 +76,11 @@ function buildWhatsAppLink(title) {
   return `https://wa.me/${CONFIG.whatsapp.number}?text=${message}`;
 }
 
+function buildGeneralWhatsAppLink() {
+  const message = encodeURIComponent("Olá, Elis! Gostaria de saber mais sobre seus atendimentos.");
+  return `https://wa.me/${CONFIG.whatsapp.number}?text=${message}`;
+}
+
 function applyConfig() {
   document.title = `${CONFIG.professionalName} ${CONFIG.brandSuffix}`;
 
@@ -103,6 +108,9 @@ function applyConfig() {
     const element = document.querySelector(`[data-social="${key}"]`);
     if (element) element.href = value;
   });
+
+  const floatingWhatsapp = document.querySelector('[data-role="floating-whatsapp"]');
+  if (floatingWhatsapp) floatingWhatsapp.href = buildGeneralWhatsAppLink();
 
   renderServices();
 }
