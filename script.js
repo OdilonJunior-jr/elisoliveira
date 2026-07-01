@@ -14,7 +14,8 @@ const CONFIG = {
   media: {
     treeVideoDesktop: "assets/video/tree-scroll.mp4",
     treeVideoMobile: "assets/video/tree-scroll-mobile.mp4",
-    treePoster: "assets/video/tree-scroll-poster.webp"
+    treePoster: "assets/video/tree-scroll-poster.webp",
+    treePosterMobile: "assets/video/tree-scroll-poster-mobile.webp"
   },
   links: {
     social: {
@@ -159,222 +160,180 @@ function initScrollScrubVideo() {
   if (!section || !video) return;
 
   const clamp = (value, min, max) => Math.min(Math.max(value, min), max);
-  const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
   const mobileQuery = window.matchMedia("(max-width: 700px)");
-  const VIDEO_FPS = 24;
-  const FRAME_STEP = 1 / VIDEO_FPS;
+  const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  const SOURCE_FPS = 24;
+  const FRAME_STEP = 1 / SOURCE_FPS;
 
-  let activeTrigger = null;
-  let fallbackCleanup = null;
-  let metadataHandler = null;
-  let seekedHandler = null;
-  let animationFrame = 0;
   let duration = 0;
+  let latestProgress = 0;
   let targetTime = 0;
-  let displayedTime = 0;
-  let lastSeekAt = 0;
+  let seekFrame = 0;
   let sourceIsMobile = mobileQuery.matches;
+  let scrollTriggerInstance = null;
+  let fallbackFrame = 0;
 
-  video.preload = "auto";
   video.muted = true;
   video.playsInline = true;
   video.disablePictureInPicture = true;
+  video.preload = "auto";
 
   const sourceForViewport = () => (
     mobileQuery.matches ? CONFIG.media.treeVideoMobile : CONFIG.media.treeVideoDesktop
   );
 
-  const stopAnimationLoop = () => {
-    if (!animationFrame) return;
-    window.cancelAnimationFrame(animationFrame);
-    animationFrame = 0;
+  const posterForViewport = () => (
+    mobileQuery.matches && CONFIG.media.treePosterMobile
+      ? CONFIG.media.treePosterMobile
+      : CONFIG.media.treePoster
+  );
+
+  const quantizeTime = progress => {
+    const safeEnd = Math.max(duration - FRAME_STEP, 0.01);
+    const rawTime = clamp(progress, 0, 1) * safeEnd;
+    return clamp(Math.round(rawTime / FRAME_STEP) * FRAME_STEP, 0.01, safeEnd);
   };
 
-  const destroyScrollControl = () => {
-    stopAnimationLoop();
-    activeTrigger?.kill();
-    activeTrigger = null;
-    fallbackCleanup?.();
-    fallbackCleanup = null;
-
-    if (metadataHandler) video.removeEventListener("loadedmetadata", metadataHandler);
-    if (seekedHandler) video.removeEventListener("seeked", seekedHandler);
-    metadataHandler = null;
-    seekedHandler = null;
-  };
-
-  const commitFrame = now => {
-    animationFrame = 0;
+  const applyLatestFrame = () => {
+    seekFrame = 0;
     if (!duration || video.readyState < HTMLMediaElement.HAVE_METADATA) return;
 
-    const safeEnd = Math.max(duration - FRAME_STEP, FRAME_STEP);
-    const smoothing = mobileQuery.matches ? 0.16 : 0.20;
-    const differenceToTarget = targetTime - displayedTime;
+    const nextTime = quantizeTime(latestProgress);
+    targetTime = nextTime;
 
-    displayedTime += differenceToTarget * smoothing;
-    if (Math.abs(differenceToTarget) < FRAME_STEP * 0.35) {
-      displayedTime = targetTime;
-    }
+    // Nunca cria uma fila de seeks. Enquanto um quadro está sendo entregue,
+    // apenas guardamos o destino mais recente do scroll.
+    if (video.seeking) return;
+    if (Math.abs(video.currentTime - nextTime) < FRAME_STEP * 0.45) return;
 
-    // Trabalha em passos reais de quadro. Isso evita dezenas de seeks
-    // praticamente iguais, que eram a principal causa dos engasgos.
-    const quantizedTime = clamp(
-      Math.round(displayedTime / FRAME_STEP) * FRAME_STEP,
-      FRAME_STEP,
-      safeEnd
-    );
-
-    const minimumSeekInterval = mobileQuery.matches ? 52 : 38;
-    const canSeek = !video.seeking && (now - lastSeekAt) >= minimumSeekInterval;
-
-    if (canSeek && Math.abs(video.currentTime - quantizedTime) >= FRAME_STEP * 0.72) {
-      try {
-        lastSeekAt = now;
-        video.currentTime = quantizedTime;
-      } catch (_) {
-        // Alguns navegadores recusam um seek enquanto o decoder inicializa.
-      }
-    }
-
-    const stillSmoothing = Math.abs(targetTime - displayedTime) > FRAME_STEP * 0.28;
-    const waitingForFrame = video.seeking || Math.abs(video.currentTime - quantizedTime) > FRAME_STEP;
-
-    if (stillSmoothing || waitingForFrame) {
-      animationFrame = window.requestAnimationFrame(commitFrame);
+    try {
+      video.currentTime = nextTime;
+    } catch (_) {
+      // Alguns navegadores ignoram seeks antes de liberar o primeiro quadro.
     }
   };
 
-  const requestSmoothFrame = time => {
-    if (!duration) return;
-    targetTime = clamp(time, FRAME_STEP, Math.max(duration - FRAME_STEP, FRAME_STEP));
-    if (!animationFrame) animationFrame = window.requestAnimationFrame(commitFrame);
+  const requestFrame = progress => {
+    latestProgress = clamp(progress, 0, 1);
+    if (!seekFrame) seekFrame = window.requestAnimationFrame(applyLatestFrame);
   };
 
-  const nativeFallback = safeDuration => {
-    let scrollFrame = 0;
+  const currentNativeProgress = () => {
+    const rect = section.getBoundingClientRect();
+    const range = Math.max(section.offsetHeight - window.innerHeight, 1);
+    return clamp(-rect.top / range, 0, 1);
+  };
 
+  const createNativeFallback = () => {
     const update = () => {
-      scrollFrame = 0;
-      const rect = section.getBoundingClientRect();
-      const range = Math.max(section.offsetHeight - window.innerHeight, 1);
-      const progress = clamp(-rect.top / range, 0, 1);
-      requestSmoothFrame(progress * safeDuration);
+      fallbackFrame = 0;
+      requestFrame(currentNativeProgress());
     };
-
     const requestUpdate = () => {
-      if (!scrollFrame) scrollFrame = window.requestAnimationFrame(update);
+      if (!fallbackFrame) fallbackFrame = window.requestAnimationFrame(update);
     };
 
     window.addEventListener("scroll", requestUpdate, { passive: true });
     window.addEventListener("resize", requestUpdate, { passive: true });
     update();
-
-    fallbackCleanup = () => {
-      window.removeEventListener("scroll", requestUpdate);
-      window.removeEventListener("resize", requestUpdate);
-      if (scrollFrame) window.cancelAnimationFrame(scrollFrame);
-    };
   };
 
-  const createGsapControl = safeDuration => {
+  const createScrollTrigger = () => {
+    if (!window.gsap || !window.ScrollTrigger) {
+      createNativeFallback();
+      return;
+    }
+
     window.gsap.registerPlugin(window.ScrollTrigger);
     window.ScrollTrigger.config({
       limitCallbacks: true,
       ignoreMobileResize: true
     });
 
-    activeTrigger = window.ScrollTrigger.create({
+    scrollTriggerInstance?.kill();
+    scrollTriggerInstance = window.ScrollTrigger.create({
       trigger: section,
       start: "top top",
       end: "bottom bottom",
+      scrub: true,
       invalidateOnRefresh: true,
-      anticipatePin: 1,
       fastScrollEnd: false,
-      onUpdate: self => requestSmoothFrame(self.progress * safeDuration),
-      onRefresh: self => {
-        displayedTime = self.progress * safeDuration;
-        requestSmoothFrame(displayedTime);
-      }
+      onUpdate: self => requestFrame(self.progress),
+      onRefresh: self => requestFrame(self.progress)
     });
-
-    window.requestAnimationFrame(() => window.ScrollTrigger.refresh());
   };
 
-  const prepareVideo = () => {
-    duration = Number.isFinite(video.duration) ? video.duration : 0;
-    if (!duration) return;
-
-    const safeDuration = Math.max(duration - FRAME_STEP, FRAME_STEP);
-    video.pause();
-    section.classList.add("is-video-ready");
-
-    displayedTime = FRAME_STEP;
-    targetTime = FRAME_STEP;
-    lastSeekAt = 0;
-
-    seekedHandler = () => {
-      if (Math.abs(video.currentTime - targetTime) > FRAME_STEP) {
-        if (!animationFrame) animationFrame = window.requestAnimationFrame(commitFrame);
-      }
-    };
-    video.addEventListener("seeked", seekedHandler);
-
-    if (reduceMotion) {
-      displayedTime = safeDuration * 0.42;
-      requestSmoothFrame(displayedTime);
-      return;
-    }
-
-    if (window.gsap && window.ScrollTrigger) {
-      createGsapControl(safeDuration);
-    } else {
-      nativeFallback(safeDuration);
-    }
-
-    // Inicializa o decoder em celulares sem iniciar reprodução visível.
-    if (mobileQuery.matches) {
-      const unlock = video.play();
-      if (unlock && typeof unlock.then === "function") {
-        unlock.then(() => {
-          video.pause();
-          requestSmoothFrame(targetTime);
-        }).catch(() => {});
-      }
+  const unlockMobileDecoder = () => {
+    if (!mobileQuery.matches || reduceMotion) return;
+    const attempt = video.play();
+    if (attempt && typeof attempt.then === "function") {
+      attempt.then(() => {
+        video.pause();
+        requestFrame(latestProgress);
+      }).catch(() => {});
     }
   };
 
-  const loadResponsiveSource = () => {
-    destroyScrollControl();
-    section.classList.remove("is-video-ready");
-    duration = 0;
+  const loadResponsiveSource = (preserveProgress = false) => {
+    const retainedProgress = preserveProgress
+      ? latestProgress
+      : currentNativeProgress();
+
+    latestProgress = retainedProgress;
     targetTime = 0;
-    displayedTime = 0;
-    lastSeekAt = 0;
+    duration = 0;
+    section.classList.remove("is-video-ready");
 
     video.pause();
-    video.removeAttribute("src");
-    video.load();
-
-    metadataHandler = prepareVideo;
-    video.addEventListener("loadedmetadata", metadataHandler, { once: true });
-    video.addEventListener("loadeddata", () => section.classList.add("is-video-ready"), { once: true });
-
+    video.poster = posterForViewport();
     video.src = sourceForViewport();
     video.load();
   };
 
+  video.addEventListener("loadedmetadata", () => {
+    duration = Number.isFinite(video.duration) ? video.duration : 0;
+    if (!duration) return;
+
+    section.classList.add("is-video-ready");
+
+    if (reduceMotion) {
+      latestProgress = 0.42;
+      requestFrame(latestProgress);
+      return;
+    }
+
+    requestFrame(latestProgress || currentNativeProgress());
+    unlockMobileDecoder();
+    createScrollTrigger();
+    window.ScrollTrigger?.refresh();
+  });
+
+  video.addEventListener("loadeddata", () => {
+    section.classList.add("is-video-ready");
+  });
+
+  video.addEventListener("seeked", () => {
+    // Se o usuário continuou rolando durante o seek, salta diretamente
+    // para o quadro mais recente, sem processar os intermediários antigos.
+    const newestTime = quantizeTime(latestProgress);
+    if (Math.abs(newestTime - video.currentTime) >= FRAME_STEP * 0.5) {
+      requestFrame(latestProgress);
+    }
+  });
+
   mobileQuery.addEventListener?.("change", () => {
     if (sourceIsMobile === mobileQuery.matches) return;
     sourceIsMobile = mobileQuery.matches;
-    loadResponsiveSource();
+    loadResponsiveSource(true);
   });
 
-  window.addEventListener("load", () => {
-    if (window.ScrollTrigger) window.ScrollTrigger.refresh();
-  }, { once: true });
+  window.addEventListener("orientationchange", () => {
+    window.setTimeout(() => window.ScrollTrigger?.refresh(), 160);
+  }, { passive: true });
 
-  loadResponsiveSource();
+  loadResponsiveSource(false);
 }
+
 function initRevealAnimation() {
   const items = document.querySelectorAll(".reveal");
   const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
