@@ -17,56 +17,63 @@ const CONFIG = {
     treePoster: "assets/video/tree-scroll-poster.webp"
   },
   links: {
-    contact: "https://instagram.com/elisoliveiraintegrativa",
     social: {
       instagram: "https://instagram.com/elisoliveiraintegrativa"
+    }
+  },
+  // Número de WhatsApp da Elisangela (apenas dígitos, com DDI+DDD).
+  whatsapp: {
+    number: "553484060611",
+    messageFor(title) {
+      return `Olá, Elis! Gostaria de saber mais sobre ${title}.`;
     }
   },
   services: [
     {
       title: "Terapia e desenvolvimento de mulheres",
-      description: "Um espaço de escuta, fortalecimento e reconexão com a própria história, escolhas e potência.",
+      description: "Um espaço de escuta, fortalecimento e reconexão com a própria história, escolhas e potência feminina.",
       image: "assets/images/elis-mulheres.webp",
-      accent: "terracotta",
-      link: "https://instagram.com/elisoliveiraintegrativa"
+      cta: "Quero fazer parte"
     },
     {
       title: "Terapia e desenvolvimento pessoal",
       description: "Processos individuais para ampliar consciência, autonomia emocional e direção de vida.",
       image: "assets/images/elis-desenvolvimento.webp",
-      accent: "moss",
-      link: "https://instagram.com/elisoliveiraintegrativa"
+      cta: "Quero começar essa jornada"
     },
     {
       title: "Mentoria profissional",
       description: "Clareza, posicionamento e desenvolvimento para mulheres que desejam avançar em sua trajetória profissional.",
       image: "assets/images/elis-mentoria.webp",
-      accent: "terracotta",
-      link: "https://instagram.com/elisoliveiraintegrativa"
+      cta: "Quero essa mentoria"
     },
     {
       title: "CMR — Círculo de Mulheres Raízes",
       description: "Encontros de conexão, pertencimento e desenvolvimento em uma experiência coletiva entre mulheres.",
-      image: "assets/images/elis-cmr.webp",
-      accent: "moss",
-      link: "https://instagram.com/elisoliveiraintegrativa"
+      image: "assets/images/elis-constelacao.webp",
+      cta: "Quero participar do círculo"
     },
     {
       title: "Hipnoterapia e terapias integrativas",
       description: "Abordagens complementares conduzidas com acolhimento, presença e atenção à singularidade de cada processo.",
       image: "assets/images/elis-terapias.webp",
-      accent: "terracotta",
-      link: "https://instagram.com/elisoliveiraintegrativa"
+      cta: "Quero conhecer essa terapia"
     },
     {
       title: "Constelação familiar",
       description: "Um olhar sistêmico para padrões, vínculos e movimentos que atravessam a história familiar.",
-      image: "assets/images/elis-constelacao.webp",
-      accent: "moss",
-      link: "https://instagram.com/elisoliveiraintegrativa"
+      image: "assets/images/elis-cmr.webp",
+      cta: "Quero minha constelação"
     }
   ]
 };
+
+const CTA_ARROW_ICON = `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 12h15m0 0-5.5-5.5M19 12l-5.5 5.5" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+
+function buildWhatsAppLink(title) {
+  const message = encodeURIComponent(CONFIG.whatsapp.messageFor(title));
+  return `https://wa.me/${CONFIG.whatsapp.number}?text=${message}`;
+}
 
 function applyConfig() {
   document.title = `${CONFIG.professionalName} ${CONFIG.brandSuffix}`;
@@ -75,9 +82,7 @@ function applyConfig() {
   if (heroImage) heroImage.src = CONFIG.images.hero;
 
   const treeVideo = document.querySelector("#tree-scroll-video");
-  if (treeVideo) {
-    treeVideo.poster = CONFIG.media.treePoster;
-  }
+  if (treeVideo) treeVideo.poster = CONFIG.media.treePoster;
 
   renderHeroTicker();
 
@@ -93,18 +98,12 @@ function applyConfig() {
     if (element) element.textContent = value;
   });
 
-  document.querySelectorAll('[data-link="contact"]').forEach(element => {
-    element.href = CONFIG.links.contact;
-  });
-
   Object.entries(CONFIG.links.social).forEach(([key, value]) => {
     const element = document.querySelector(`[data-social="${key}"]`);
     if (element) element.href = value;
   });
 
   renderServices();
-
-  document.querySelectorAll(".service-card__kicker").forEach(element => element.remove());
 }
 
 function renderHeroTicker() {
@@ -120,23 +119,12 @@ function renderHeroTicker() {
     .join('<span class="hero__ticker-separator" aria-hidden="true">•</span>');
 }
 
-
 function renderServices() {
   const grid = document.querySelector("#services-grid");
   if (!grid) return;
 
-  grid.innerHTML = CONFIG.services.map(service => `
-    <a
-      class="service-card reveal"
-      href="${service.link}"
-      target="_blank"
-      rel="noopener noreferrer"
-      aria-label="Conhecer ${service.title}"
-    >
-      <div class="service-card__content">
-        <h3>${service.title}</h3>
-        <p>${service.description}</p>
-      </div>
+  grid.innerHTML = CONFIG.services.map((service, index) => `
+    <article class="service-card ${index % 2 === 1 ? "service-card--reverse" : ""} reveal">
       <div class="service-card__media">
         <img
           src="${service.image}"
@@ -147,7 +135,21 @@ function renderServices() {
           decoding="async"
         >
       </div>
-    </a>
+      <div class="service-card__content">
+        <h3>${service.title}</h3>
+        <p>${service.description}</p>
+        <a
+          class="service-card__cta"
+          href="${buildWhatsAppLink(service.title)}"
+          target="_blank"
+          rel="noopener noreferrer"
+          aria-label="Falar com Elis no WhatsApp sobre ${service.title}"
+        >
+          ${service.cta}
+          ${CTA_ARROW_ICON}
+        </a>
+      </div>
+    </article>
   `).join("");
 }
 
@@ -156,113 +158,197 @@ function initScrollScrubVideo() {
   const video = document.querySelector("#tree-scroll-video");
   if (!section || !video) return;
 
+  const clamp = (value, min, max) => Math.min(Math.max(value, min), max);
   const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
   const mobileQuery = window.matchMedia("(max-width: 700px)");
-  const clamp = (value, min, max) => Math.min(Math.max(value, min), max);
 
-  let duration = 0;
-  let targetProgress = 0;
-  let renderedProgress = 0;
+  let activeTween = null;
+  let activeTrigger = null;
+  let metadataHandler = null;
+  let seekedHandler = null;
   let frameRequest = 0;
-  let lastMobileState = mobileQuery.matches;
+  let requestedTime = 0;
+  let sourceIsMobile = mobileQuery.matches;
 
   const sourceForViewport = () => (
     mobileQuery.matches ? CONFIG.media.treeVideoMobile : CONFIG.media.treeVideoDesktop
   );
 
-  const measureProgress = () => {
-    const rect = section.getBoundingClientRect();
-    const viewportHeight = window.innerHeight || document.documentElement.clientHeight;
-    const scrollRange = Math.max(section.offsetHeight - viewportHeight, 1);
-    targetProgress = clamp(-rect.top / scrollRange, 0, 1);
-  };
-
-  const renderFrame = () => {
+  const cancelFrame = () => {
+    if (!frameRequest) return;
+    window.cancelAnimationFrame(frameRequest);
     frameRequest = 0;
-    if (!duration || video.readyState < 1) return;
+  };
 
-    renderedProgress += (targetProgress - renderedProgress) * 0.20;
-    if (Math.abs(targetProgress - renderedProgress) < 0.0007) {
-      renderedProgress = targetProgress;
-    }
+  const destroyScrollControl = () => {
+    cancelFrame();
+    activeTween?.kill();
+    activeTrigger?.kill();
+    activeTween = null;
+    activeTrigger = null;
 
-    const nextTime = clamp(renderedProgress * Math.max(duration - 0.06, 0.01), 0.01, Math.max(duration - 0.06, 0.01));
+    if (metadataHandler) video.removeEventListener("loadedmetadata", metadataHandler);
+    if (seekedHandler) video.removeEventListener("seeked", seekedHandler);
+    metadataHandler = null;
+    seekedHandler = null;
+  };
 
-    // Evita enfileirar buscas enquanto o navegador ainda decodifica o quadro anterior.
-    if (!video.seeking && Math.abs(video.currentTime - nextTime) >= 0.035) {
-      try {
+  const commitRequestedFrame = () => {
+    frameRequest = 0;
+    if (video.readyState < HTMLMediaElement.HAVE_METADATA || !Number.isFinite(video.duration)) return;
+    if (video.seeking) return;
+
+    const safeEnd = Math.max(video.duration - 0.04, 0.01);
+    const nextTime = clamp(requestedTime, 0.01, safeEnd);
+    const difference = Math.abs(video.currentTime - nextTime);
+    if (difference < 0.018) return;
+
+    try {
+      // Para deslocamentos grandes, fastSeek reduz o custo de decodificação.
+      // O vídeo foi exportado com keyframes a cada 0,25 s para manter precisão.
+      if (typeof video.fastSeek === "function" && difference > 0.55) {
+        video.fastSeek(nextTime);
+      } else {
         video.currentTime = nextTime;
-      } catch (_) {
-        // Navegadores podem ignorar uma busca antes de os metadados estarem prontos.
       }
-    }
-
-    if (Math.abs(targetProgress - renderedProgress) > 0.0007 || video.seeking) {
-      frameRequest = window.requestAnimationFrame(renderFrame);
+    } catch (_) {
+      // O navegador pode recusar uma busca enquanto prepara o decoder.
     }
   };
 
-  const requestRender = () => {
-    measureProgress();
-    if (!frameRequest) frameRequest = window.requestAnimationFrame(renderFrame);
+  const requestFrameCommit = time => {
+    requestedTime = time;
+    if (!frameRequest) frameRequest = window.requestAnimationFrame(commitRequestedFrame);
   };
 
-  const unlockMobileDecoder = () => {
-    if (!mobileQuery.matches || reduceMotion) return;
-    const attempt = video.play();
-    if (attempt && typeof attempt.then === "function") {
-      attempt.then(() => {
-        video.pause();
-        requestRender();
-      }).catch(() => requestRender());
-    }
+  const nativeFallback = duration => {
+    let scrollFrame = 0;
+
+    const update = () => {
+      scrollFrame = 0;
+      const rect = section.getBoundingClientRect();
+      const range = Math.max(section.offsetHeight - window.innerHeight, 1);
+      const progress = clamp(-rect.top / range, 0, 1);
+      requestFrameCommit(progress * Math.max(duration - 0.04, 0.01));
+    };
+
+    const requestUpdate = () => {
+      if (!scrollFrame) scrollFrame = window.requestAnimationFrame(update);
+    };
+
+    window.addEventListener("scroll", requestUpdate, { passive: true });
+    window.addEventListener("resize", requestUpdate, { passive: true });
+    update();
+
+    activeTrigger = {
+      kill() {
+        window.removeEventListener("scroll", requestUpdate);
+        window.removeEventListener("resize", requestUpdate);
+        if (scrollFrame) window.cancelAnimationFrame(scrollFrame);
+      }
+    };
   };
 
-  const prepareLoadedVideo = () => {
-    duration = Number.isFinite(video.duration) ? video.duration : 0;
+  const createGsapControl = duration => {
+    const safeDuration = Math.max(duration - 0.04, 0.01);
+    const playhead = { time: 0.01 };
+
+    window.gsap.registerPlugin(window.ScrollTrigger);
+    window.ScrollTrigger.config({
+      limitCallbacks: true,
+      ignoreMobileResize: true
+    });
+
+    activeTween = window.gsap.to(playhead, {
+      time: safeDuration,
+      ease: "none",
+      paused: true,
+      onUpdate: () => requestFrameCommit(playhead.time)
+    });
+
+    activeTrigger = window.ScrollTrigger.create({
+      trigger: section,
+      start: "top top",
+      end: "bottom bottom",
+      animation: activeTween,
+      scrub: 0.38,
+      invalidateOnRefresh: true,
+      anticipatePin: 1,
+      onRefresh: self => {
+        playhead.time = self.progress * safeDuration;
+        requestFrameCommit(playhead.time);
+      }
+    });
+
+    window.requestAnimationFrame(() => window.ScrollTrigger.refresh());
+  };
+
+  const prepareVideo = () => {
+    const duration = Number.isFinite(video.duration) ? video.duration : 0;
+    if (!duration) return;
+
+    video.pause();
     section.classList.add("is-video-ready");
-    measureProgress();
+
+    seekedHandler = () => {
+      if (Math.abs(video.currentTime - requestedTime) > 0.025) {
+        requestFrameCommit(requestedTime);
+      }
+    };
+    video.addEventListener("seeked", seekedHandler);
 
     if (reduceMotion) {
-      try { video.currentTime = Math.min(duration * 0.42, Math.max(duration - 0.06, 0.01)); } catch (_) {}
+      requestFrameCommit(duration * 0.42);
       return;
     }
 
-    try { video.currentTime = Math.max(targetProgress * duration, 0.01); } catch (_) {}
-    unlockMobileDecoder();
-    requestRender();
-  };
-
-  const loadSource = (preserveProgress = false) => {
-    if (preserveProgress && duration) {
-      renderedProgress = clamp(video.currentTime / duration, 0, 1);
-      targetProgress = renderedProgress;
+    if (window.gsap && window.ScrollTrigger) {
+      createGsapControl(duration);
+    } else {
+      nativeFallback(duration);
     }
 
+    // Inicializa o decoder móvel sem deixar o vídeo tocar sozinho.
+    if (mobileQuery.matches) {
+      const unlock = video.play();
+      if (unlock && typeof unlock.then === "function") {
+        unlock.then(() => {
+          video.pause();
+          requestFrameCommit(requestedTime);
+        }).catch(() => {});
+      }
+    }
+  };
+
+  const loadResponsiveSource = () => {
+    destroyScrollControl();
     section.classList.remove("is-video-ready");
-    duration = 0;
+    requestedTime = 0;
+
+    video.pause();
+    video.removeAttribute("src");
+    video.load();
+
+    metadataHandler = prepareVideo;
+    video.addEventListener("loadedmetadata", metadataHandler, { once: true });
+    video.addEventListener("loadeddata", () => section.classList.add("is-video-ready"), { once: true });
+
     video.src = sourceForViewport();
     video.load();
   };
 
-  video.addEventListener("loadedmetadata", prepareLoadedVideo);
-  video.addEventListener("seeked", requestRender);
-  video.addEventListener("canplay", () => section.classList.add("is-video-ready"));
+  mobileQuery.addEventListener?.("change", () => {
+    if (sourceIsMobile === mobileQuery.matches) return;
+    sourceIsMobile = mobileQuery.matches;
+    loadResponsiveSource();
+  });
 
-  if (!reduceMotion) {
-    window.addEventListener("scroll", requestRender, { passive: true });
-    window.addEventListener("resize", requestRender, { passive: true });
+  window.addEventListener("load", () => {
+    if (window.ScrollTrigger) window.ScrollTrigger.refresh();
+  }, { once: true });
 
-    mobileQuery.addEventListener?.("change", () => {
-      if (lastMobileState === mobileQuery.matches) return;
-      lastMobileState = mobileQuery.matches;
-      loadSource(true);
-    });
-  }
-
-  loadSource(false);
+  loadResponsiveSource();
 }
-
 function initRevealAnimation() {
   const items = document.querySelectorAll(".reveal");
   const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -288,7 +374,6 @@ function initRevealAnimation() {
     observer.observe(item);
   });
 }
-
 
 document.addEventListener("DOMContentLoaded", () => {
   applyConfig();
